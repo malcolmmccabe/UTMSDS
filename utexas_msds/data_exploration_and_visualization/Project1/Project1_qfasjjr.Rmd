@@ -1,0 +1,55 @@
+---
+title: "Project 1"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r global_options, include=FALSE}
+library(knitr)
+library(ggplot2)
+opts_chunk$set(fig.align="center", fig.height=4, fig.width=5.5)
+```
+
+**This project is due on the deadline posted on edX. Please submit a .pdf file of your output and upload a .zip file containing your .Rmd file. Do NOT include your name or EID in your filenames.**
+
+
+**Part 1:** Demonstrate basic command of Markdown by creating a bulleted list with three items, a numbered list with three items, and a sentence that has one word in bold and one word in italics.
+
+**Bulleted List w/ 3 Items**
+
+So far I have learned: 
+
+* Using the aes function in R
+* How to map colors to categories
+* How to tell a story
+
+**Numbered List w/ 3 Items**
+
+What I am looking forward to learning are: 
+
+1. Creating dashboards
+2. Data ethics
+3. Interactive plots
+
+**Sentence w/ Bold & Italics**
+
+I am taking the **Data Exploration & Visualization** course by *Claus Wilke*.
+
+**Part 2:** The `mtcars` dataset contains information on car design and performance in 1974:
+
+```{r}
+mtcars
+```
+
+Use ggplot to make a line plot of the fuel economy of a car, measured in miles/gallon (column `mpg`), versus its weight (column `wt`).
+
+```{r}
+ggplot(mtcars, aes(x=wt, y=mpg)) + geom_line()
+```
+
+Now make a scatter plot (using `geom_point()`) of the horse power of a car (`hp`) versus its weight, and color points by its fuel economy.
+
+```{r}
+ggplot(mtcars, aes(x=wt, y=hp, color=mpg)) + geom_point()
+```
