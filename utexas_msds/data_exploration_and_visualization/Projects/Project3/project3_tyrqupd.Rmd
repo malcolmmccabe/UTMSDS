@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This is the dataset you will be working with:
 
-```{r message = FALSE, warning = FALSE}
+```{r message = FALSE, warning = FALSE, include=FALSE}
 food <- readr::read_csv("https://wilkelab.org/DSC385/datasets/food_coded.csv")
 food
 ```
@@ -41,7 +41,9 @@ Then, make one visualization each for student income, father's educational level
 5. When using `table()`, provide the argument `useNA = "ifany"` to make sure missing values are counted: `table(..., useNA = "ifany")`.
 
 
-```{r}
+**Data Cleansing**
+
+```{r, results = FALSE, message = FALSE, warning = FALSE}
 food <- readr::read_csv("https://wilkelab.org/DSC385/datasets/food_coded.csv")
 
 # Print first few rows
@@ -119,10 +121,10 @@ summary(food_cleaned)
 
 The dataset that will be used to answer the question is about food choices and preferences from responses of 126 college students from Mercyhurst University who participated in a survey. In order to determine if GPA is related to student income, the father's educational level, or the student's perception of what an ideal diet is, I will use the following columns:
 
-1. GPA
-2. income
-3. father_education
-4. ideal_diet_coded
+1. GPA: The grade point average of the student
+2. income: The amount of money the student earns
+3. father_education: The level of education obtained by the student's father
+4. ideal_diet_coded: Coded ideal diet from open-ended answer of the student
 
 GPA will be my response variable, while the others will be the explanatory variables. As these are all categorical variables, I will also convert the numerical codes to human readable values that are easier to interpret. Lastly, I will remove all NAs as they are not relevant for this analysis. 
 
@@ -148,6 +150,7 @@ food_cleaned |>
   #Specify boxplot (legend is not needed)
   geom_boxplot(show.legend = FALSE) +
   
+  
   #Fill categories using blue
   scale_fill_brewer(palette = "Blues") +
   
@@ -158,7 +161,10 @@ food_cleaned |>
   theme_grey(12) +
   
   #Set title
-  ggtitle("Income vs GPA")
+  ggtitle("Income vs GPA") +
+  
+  #Set axis labels
+  labs(y = 'gpa', x = "income")
 ```
 
 ```{r message = FALSE, warning = FALSE}
@@ -177,6 +183,7 @@ food_cleaned |>
   #Specify boxplot (legend is not needed)
   geom_boxplot(show.legend = FALSE) +
   
+  
   #Fill categories using blue
   scale_fill_brewer(palette = "Oranges") +
   
@@ -187,7 +194,10 @@ food_cleaned |>
   theme_grey(12) +
   
   #Set title
-  ggtitle("Father Education vs GPA")
+  ggtitle("Father Education vs GPA") +
+  
+  #Set axis labels
+  labs(y = 'gpa', x = "father's education")
 ```
 ```{r message = FALSE, warning = FALSE}
 
@@ -214,13 +224,24 @@ food_cleaned |>
   #Wrap axis labels
   scale_x_discrete(labels = ~ str_wrap(as.character(.x), 10)) + 
   
+  #Set theme
   theme_grey(10) +
   
   #Set title
-  ggtitle("Ideal Diet vs GPA")
+  ggtitle("Ideal Diet vs GPA") +
+  
+  
+  #Set axis labels
+  labs(y = 'gpa', x = "ideal diet")
 ```
 
+**Discussion:** 
+
+For each of the explanatory variables, beginning with student income, average gpa appears to remain consistent regardless of student income level; however, both extremities (<$15,000 and >$100,000) appear to have the highest skewed distributions, where students in these categories are skewed towards having a lower GPA. This could be due to a few factors. One, there may be speculation that students in this cohort already come from low-income families and are not adequately provided with the resources needed to succeed in school growing up. Secondly, students in the >$100,000 cohort may lack the "drive" from doing well in school as they already have sufficient resources. 
+
+In regards to comparing father's education and GPA, the pattern appears largely the same as student income level, but with greater differences between cohorts, which can likely be explained using the same reasons as above. A student who has a father with less than a high school degree may not be pushed enough to perform well in school; similarly, a student with a father who has at least a graduate degree may not have as high as a GPA as other cohorts due to a lack of "drive" from already having sufficient resources. 
+
+Lastly, as there is no inherent order for ideal diet, it is apparent that students who follow a diet fare better than students who don't have a clear diet regimen. 
 
 
-**Discussion:** *Your discussion of results here.*
 
