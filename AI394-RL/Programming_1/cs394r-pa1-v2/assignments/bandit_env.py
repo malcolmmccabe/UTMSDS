@@ -56,7 +56,7 @@ class BanditEnvironment(gym.Env):
         ### 1. Sample a reward from the selected arm.
         #       Hint: use np.random.normal()
         #       Hint: np.random.normal() accepts the mean and standard deviation, not the variance.
-        raise NotImplementedError
+        return np.random.normal(self.Q_star[action])
 
     def _is_ideal_action(self, action: int) -> bool:
         """
@@ -71,7 +71,8 @@ class BanditEnvironment(gym.Env):
         ### TODO ###
         ### 1. Determine if the selected action is one of the best actions.
         ###    Hint: remember that multiple arms could have the same Q* value (e.g. on the first step, all arms are valid)
-        raise NotImplementedError
+        max_value = np.max(self.Q_star)
+        return self.Q_star[action] == max_value
 
 
     def _walk_all_arms(self):
@@ -83,4 +84,5 @@ class BanditEnvironment(gym.Env):
         ### TODO ###
         ### 1. Add noise to all the arms of the bandit.
         #       Hint: use np.random.normal() again, but with the size parameter this time.
-        raise NotImplementedError
+        noise = np.random.normal(0, 0.01, self.Q_star.shape)
+        self.Q_star += noise
