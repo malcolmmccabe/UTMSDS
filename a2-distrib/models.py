@@ -7,6 +7,9 @@ import numpy as np
 import random
 from sentiment_data import *
 import nltk
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader
+
 
 
 class SentimentClassifier(object):
@@ -53,11 +56,20 @@ class NeuralSentimentClassifier(nn.Module, SentimentClassifier):
     method and you can optionally override predict_all if you want to use batching at inference time (not necessary,
     but may make things faster!)
     """
+    
     def __init__(self, word_embeddings, hid, num_classes, out):
+
+        """
+        Constructs the computation graph by instantiating the various layers and initializing weights.
+
+        :param inp: size of input (integer)
+        :param hid: size of hidden layer(integer)
+        :param out: size of output (integer), which should be the number of classes
+        """
 
         super(NeuralSentimentClassifier, self).__init__()
         self.word_embeddings = word_embeddings
-        self.embedding_layer = self.word_embeddings.get_initialized_embedding_layer()
+        self.embedding_layer = self.word_embeddings.get_initialized_embedding_layer(frozen = False, padding_idx = 0)
         self.embedding_dim = self.word_embeddings.get_embedding_length()
         self.dropout = nn.Dropout(p=out)
 
@@ -66,16 +78,17 @@ class NeuralSentimentClassifier(nn.Module, SentimentClassifier):
         self.W = nn.Linear(hid, num_classes)
         self.log_softmax = nn.LogSoftmax(dim=1)
 
+    
     def forward(self, x):
+        """
+        Runs the neural network on the given data and returns log probabilities of the various classes.
 
-        embeddings = self.embedding_layer(x)
-        averaged_embedding = torch.mean(embeddings, dim=1)
-        hidden_output = self.V(averaged_embedding)
-        hidden_output = self.g(hidden_output) 
-        hidden_output = self.dropout(hidden_output)
-        output = self.W(hidden_output)
-        log_probs = self.log_softmax(output) 
-        return log_probs
+        :param x: a [inp]-sized tensor of input data
+        :return: an [out]-sized tensor of log probabilities. (In general your network can be set up to return either log
+        probabilities or a tuple of (loss, log probability) if you want to pass in y to this function as well
+        """
+
+        return self.log_softmax(self.W(self.dropout(self.g(self.V(torch.mean(self.embedding_layer(x), dim=1))))))
 
     def correct_spelling(self, word, word_indexer, prefix_length=3):
         
@@ -104,26 +117,28 @@ class NeuralSentimentClassifier(nn.Module, SentimentClassifier):
     
     def predict(self, ex_words, has_typos):
 
-        word_indices = []
-        for word in ex_words:
-            if has_typos:
-                corrected_word = self.correct_spelling(word, self.word_embeddings.word_indexer)
-            
-            else:
-                corrected_word = word
+        if has_typos: 
+            corrected_words = [self.correct_spelling(word, self.word_embeddings.word_indexer) for word in ex_words]
+        
+        else:
+            corrected_words = ex_words
 
-        word_idx = self.word_embeddings.word_indexer.index_of(corrected_word)
-        if word_idx == -1:
-            word_idx = self.word_embeddings.word_indexer.index_of("UNK")  # Handle unknown words
-        word_indices.append(word_idx)
+        word_indices = [self.word_embeddings.word_indexer.index_of(word) if self.word_embeddings.word_indexer.index_of(word) != -1 else self.word_embeddings.word_indexer.index_of("UNK") for word in corrected_words]
+    
+        word_indices = torch.tensor(word_indices, dtype=torch.long)
 
-        word_indices = torch.tensor(word_indices, dtype=torch.long).unsqueeze(0)
-
-        log_probs = self.forward(word_indices)
+        log_probs = self.forward(word_indices.unsqueeze(0))
         predicted_class = torch.argmax(log_probs, dim=1).item()
         return predicted_class
 
 
+def pad_batch(batch, word_indexer, pad_idx=0):
+    indexed_sentences = []
+    for sentence in batch:
+        indices = [word_indexer.index_of(word) if word_indexer.index_of(word) != -1 else word_indexer.index_of("UNK") for word in sentence]
+        indexed_sentences.append(torch.tensor(indices, dtype=torch.long))
+    
+    return pad_sequence(indexed_sentences, batch_first=True, padding_value=pad_idx)
 
 def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_exs: List[SentimentExample],
                                  word_embeddings: WordEmbeddings, train_model_for_typo_setting: bool) -> NeuralSentimentClassifier:
@@ -142,31 +157,34 @@ def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_ex
     num_classes = 2
     out = 0.5
     classifier = NeuralSentimentClassifier(word_embeddings, hid, num_classes, out)
-    num_epochs = 10
+    #num_epochs = 10
+    batch_size = 32
 
     optimizer = optim.Adam(classifier.parameters(), lr=args.lr)
 
     loss_function = nn.NLLLoss()    
+    def collate_fn(batch):
+        sentences = [ex.words for ex in batch]
+        labels = [ex.label for ex in batch]
+        padded_sentences = pad_batch(sentences, word_embeddings.word_indexer)
+        return padded_sentences, torch.tensor(labels, dtype=torch.long)
 
-    for epoch in range(0, num_epochs):
+    train_loader = DataLoader(train_exs, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+
+
+    for epoch in range(0, args.num_epochs):
         total_loss = 0
-        random.shuffle(train_exs)
-        for ex in train_exs:
-            words, label = ex.words, ex.label
-            word_indices = [word_embeddings.word_indexer.index_of(word) if word_embeddings.word_indexer.index_of(word) != -1 else word_embeddings.word_indexer.index_of("UNK") for word in words]
-
-
-            
-            word_indices = torch.tensor(word_indices, dtype=torch.long)
-            
-            word_indices = word_indices.unsqueeze(0)
-
-
+        
+        for batch_sentences, batch_labels in train_loader:
             classifier.zero_grad()
 
-            log_probs = classifier.forward(word_indices)
-            loss = loss_function(log_probs, torch.tensor([label], dtype=torch.long))
+            # Forward pass
+            log_probs = classifier.forward(batch_sentences)
 
+            # Compute the loss
+            loss = loss_function(log_probs, batch_labels)
+
+            # Backward pass and optimization
             loss.backward()
             optimizer.step()
 
