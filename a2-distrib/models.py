@@ -45,15 +45,47 @@ class TrivialSentimentClassifier(SentimentClassifier):
         return 1
 
 
-class NeuralSentimentClassifier(SentimentClassifier):
+class NeuralSentimentClassifier(nn.Module, SentimentClassifier):
     """
     Implement your NeuralSentimentClassifier here. This should wrap an instance of the network with learned weights
     along with everything needed to run it on new data (word embeddings, etc.). You will need to implement the predict
     method and you can optionally override predict_all if you want to use batching at inference time (not necessary,
     but may make things faster!)
     """
-    def __init__(self):
-        raise NotImplementedError
+    def __init__(self, word_embeddings, hid, num_classes, out):
+
+        super(NeuralSentimentClassifier, self).__init__()
+        self.word_embeddings = word_embeddings
+        self.embedding_layer = self.word_embeddings.get_initialized_embedding_layer()
+        self.embedding_dim = self.word_embeddings.get_embedding_length()
+        self.dropout = nn.Dropout(p=out)
+
+        self.V = nn.Linear(self.embedding_dim, hid)
+        self.g = nn.ReLU()
+        self.W = nn.Linear(hid, num_classes)
+        self.log_softmax = nn.LogSoftmax(dim=1)
+
+    def forward(self, x):
+
+        embeddings = self.embedding_layer(x)
+        averaged_embedding = torch.mean(embeddings, dim=1)
+        hidden_output = self.V(averaged_embedding)
+        hidden_output = self.g(hidden_output) 
+        hidden_output = self.dropout(hidden_output)
+        output = self.W(hidden_output)
+        log_probs = self.log_softmax(output) 
+        return log_probs
+    
+    def predict(self, ex_words, has_typos):
+
+        word_indices = [self.word_embeddings.word_indexer.index_of(word) if self.word_embeddings.word_indexer.index_of(word) != -1 else self.word_embeddings.word_indexer.index_of("UNK") for word in ex_words]
+    
+        word_indices = torch.tensor(word_indices, dtype=torch.long)
+
+        log_probs = self.forward(word_indices.unsqueeze(0))
+        predicted_class = torch.argmax(log_probs, dim=1).item()
+        return predicted_class
+
 
 
 def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_exs: List[SentimentExample],
@@ -68,5 +100,39 @@ def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_ex
     and return an instance of that for the typo setting if you want; you're allowed to return two different model types
     for the two settings.
     """
-    raise NotImplementedError
+    
+    hid = 128
+    num_classes = 2
+    out = 0.5
+    classifier = NeuralSentimentClassifier(word_embeddings, hid, num_classes, out)
+    num_epochs = 5
 
+    optimizer = optim.Adam(classifier.parameters(), lr=args.lr)
+
+    loss_function = nn.NLLLoss()    
+
+    for epoch in range(0, num_epochs):
+        total_loss = 0
+        random.shuffle(train_exs)
+        for ex in train_exs:
+            words, label = ex.words, ex.label
+            word_indices = [word_embeddings.word_indexer.index_of(word) if word_embeddings.word_indexer.index_of(word) != -1 else word_embeddings.word_indexer.index_of("UNK") for word in words]
+
+
+            
+            word_indices = torch.tensor(word_indices, dtype=torch.long)
+            
+            word_indices = word_indices.unsqueeze(0)
+
+
+            classifier.zero_grad()
+
+            log_probs = classifier.forward(word_indices)
+            loss = loss_function(log_probs, torch.tensor([label], dtype=torch.long))
+
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+
+    return classifier
