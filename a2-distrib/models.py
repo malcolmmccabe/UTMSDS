@@ -6,6 +6,7 @@ from torch import optim
 import numpy as np
 import random
 from sentiment_data import *
+import nltk
 
 
 class SentimentClassifier(object):
@@ -75,14 +76,50 @@ class NeuralSentimentClassifier(nn.Module, SentimentClassifier):
         output = self.W(hidden_output)
         log_probs = self.log_softmax(output) 
         return log_probs
+
+    def correct_spelling(self, word, word_indexer, prefix_length=3):
+        
+        if word_indexer.index_of(word) != -1:
+            return word
+        
+        closest_word = None
+        min_distance = float('inf')
+
+
+        options = [word_indexer.get_object(i) for i in range(len(word_indexer)) 
+               if word_indexer.get_object(i).startswith(word[:prefix_length])]
+
+        if not options:
+            options = [word_indexer.get_object(i) for i in range(len(word_indexer))]
+
+        for vocab_word in options:
+            if vocab_word == 'UNK':
+                continue
+            dist = nltk.edit_distance(word, vocab_word)
+            if dist < min_distance:
+                min_distance = dist
+                closest_word = vocab_word
+        
+        return closest_word if closest_word is not None else 'UNK'
     
     def predict(self, ex_words, has_typos):
 
-        word_indices = [self.word_embeddings.word_indexer.index_of(word) if self.word_embeddings.word_indexer.index_of(word) != -1 else self.word_embeddings.word_indexer.index_of("UNK") for word in ex_words]
-    
-        word_indices = torch.tensor(word_indices, dtype=torch.long)
+        word_indices = []
+        for word in ex_words:
+            if has_typos:
+                corrected_word = self.correct_spelling(word, self.word_embeddings.word_indexer)
+            
+            else:
+                corrected_word = word
 
-        log_probs = self.forward(word_indices.unsqueeze(0))
+        word_idx = self.word_embeddings.word_indexer.index_of(corrected_word)
+        if word_idx == -1:
+            word_idx = self.word_embeddings.word_indexer.index_of("UNK")  # Handle unknown words
+        word_indices.append(word_idx)
+
+        word_indices = torch.tensor(word_indices, dtype=torch.long).unsqueeze(0)
+
+        log_probs = self.forward(word_indices)
         predicted_class = torch.argmax(log_probs, dim=1).item()
         return predicted_class
 
