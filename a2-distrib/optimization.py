@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 ### 
 # IMPLEMENT ME! REPLACE WITH YOUR ANSWER TO PART 1B
-OPTIMAL_STEP_SIZE = 0.1
+OPTIMAL_STEP_SIZE = 0.1 ## Tested value 0.06 (autograder returned too low)
 ###
 
 def _parse_args():
@@ -41,6 +41,8 @@ def quadratic_grad(x1, x2):
     :param x2: second coordinate
     :return: a one-dimensional numpy array containing two elements representing the gradient
     """
+
+    # This will be first derivative (or gradient of above function)
     return np.array([2 * (x1 - 1), 16 * (x2 - 1)])
 
 

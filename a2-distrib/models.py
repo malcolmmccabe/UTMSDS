@@ -142,7 +142,7 @@ def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_ex
     num_classes = 2
     out = 0.5
     classifier = NeuralSentimentClassifier(word_embeddings, hid, num_classes, out)
-    num_epochs = 5
+    num_epochs = 50
 
     optimizer = optim.Adam(classifier.parameters(), lr=args.lr)
 
