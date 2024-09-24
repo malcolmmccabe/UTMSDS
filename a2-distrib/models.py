@@ -92,53 +92,78 @@ class NeuralSentimentClassifier(nn.Module, SentimentClassifier):
 
     def correct_spelling(self, word, word_indexer, prefix_length=3):
         
+        # words in index
         if word_indexer.index_of(word) != -1:
             return word
         
+        # Instantiate variables
         closest_word = None
         min_distance = float('inf')
 
+        options = []
+        for i in range(len(word_indexer)): 
+            new_word = word_indexer.get_object(i)
 
-        options = [word_indexer.get_object(i) for i in range(len(word_indexer)) 
-               if word_indexer.get_object(i).startswith(word[:prefix_length])]
+            if new_word.startswith(word[:prefix_length]):
+                options.append(new_word)
 
         if not options:
-            options = [word_indexer.get_object(i) for i in range(len(word_indexer))]
+            options = []
+            for i in range(len(word_indexer)):
+                new_word = word_indexer.get_object(i)
+                options.append(new_word)
 
-        for vocab_word in options:
-            if vocab_word == 'UNK':
+
+        for new_word in options:
+            if new_word == 'UNK':
                 continue
-            dist = nltk.edit_distance(word, vocab_word)
+            dist = nltk.edit_distance(word, new_word)
             if dist < min_distance:
                 min_distance = dist
-                closest_word = vocab_word
+                closest_word = new_word
         
         return closest_word if closest_word is not None else 'UNK'
     
     def predict(self, ex_words, has_typos):
 
         if has_typos: 
-            corrected_words = [self.correct_spelling(word, self.word_embeddings.word_indexer) for word in ex_words]
-        
+            corrected_words = []
+            for word in ex_words:
+                corrected_word = self.correct_spelling(word, self.word_embeddings.word_indexer)
+                corrected_words.append(corrected_word)
         else:
             corrected_words = ex_words
 
-        word_indices = [self.word_embeddings.word_indexer.index_of(word) if self.word_embeddings.word_indexer.index_of(word) != -1 else self.word_embeddings.word_indexer.index_of("UNK") for word in corrected_words]
-    
-        word_indices = torch.tensor(word_indices, dtype=torch.long)
+        word_indices = []
+        for word in corrected_words:
+            word_index = self.word_embeddings.word_indexer.index_of(word)
+            if word_index == -1:
+                word_index = self.word_embeddings.word_indexer.index_of('UNK')
+            word_indices.append(word_index)
 
-        log_probs = self.forward(word_indices.unsqueeze(0))
+    
+        word_indices = torch.tensor(word_indices, dtype=torch.long).unsqueeze(0)
+
+        log_probs = self.forward(word_indices)
         predicted_class = torch.argmax(log_probs, dim=1).item()
         return predicted_class
 
 
-def pad_batch(batch, word_indexer, pad_idx=0):
-    indexed_sentences = []
-    for sentence in batch:
-        indices = [word_indexer.index_of(word) if word_indexer.index_of(word) != -1 else word_indexer.index_of("UNK") for word in sentence]
-        indexed_sentences.append(torch.tensor(indices, dtype=torch.long))
+def batching(batch, word_indexer, pad_idx=0):
     
-    return pad_sequence(indexed_sentences, batch_first=True, padding_value=pad_idx)
+    index_sentences = []
+
+    for sentence in batch:
+        sentence_indices = []
+        for word in sentence:
+            word_index = word_indexer.index_of(word)
+            if word_index == -1:
+                word_index = word_indexer.index_of('UNK')
+            sentence_indices.append(word_index)
+    
+        index_sentences.append(torch.tensor(sentence_indices))
+    
+    return pad_sequence(index_sentences, batch_first=True, padding_value=pad_idx)
 
 def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_exs: List[SentimentExample],
                                  word_embeddings: WordEmbeddings, train_model_for_typo_setting: bool) -> NeuralSentimentClassifier:
@@ -152,7 +177,7 @@ def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_ex
     and return an instance of that for the typo setting if you want; you're allowed to return two different model types
     for the two settings.
     """
-    
+    # Constants
     hid = 128
     num_classes = 2
     out = 0.5
@@ -162,29 +187,37 @@ def train_deep_averaging_network(args, train_exs: List[SentimentExample], dev_ex
 
     optimizer = optim.Adam(classifier.parameters(), lr=args.lr)
 
-    loss_function = nn.NLLLoss()    
-    def collate_fn(batch):
-        sentences = [ex.words for ex in batch]
-        labels = [ex.label for ex in batch]
-        padded_sentences = pad_batch(sentences, word_embeddings.word_indexer)
-        return padded_sentences, torch.tensor(labels, dtype=torch.long)
+    loss_function = nn.NLLLoss()   
 
-    train_loader = DataLoader(train_exs, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    def batching_transform(batch):
 
+        sentences = []
+        for ex in batch:
+            sentences.append(ex.words)
+        
+        labels = []
+        for ex in batch:
+            labels.append(ex.label)
 
+        padded_sentences = batching(sentences, word_embeddings.word_indexer)
+        return padded_sentences, torch.tensor(labels)
+
+    train_loader = DataLoader(train_exs, batch_size=batch_size, shuffle=True, collate_fn=batching_transform)
+
+    # Loop through epochs (specified in parameters)
     for epoch in range(0, args.num_epochs):
         total_loss = 0
         
         for batch_sentences, batch_labels in train_loader:
             classifier.zero_grad()
 
-            # Forward pass
+            # Forward
             log_probs = classifier.forward(batch_sentences)
 
-            # Compute the loss
+            # Loss
             loss = loss_function(log_probs, batch_labels)
 
-            # Backward pass and optimization
+            #Backwards
             loss.backward()
             optimizer.step()
 
