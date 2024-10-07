@@ -39,7 +39,12 @@ class Transformer(nn.Module):
         :param num_layers: number of TransformerLayers to use; can be whatever you want
         """
         super().__init__()
-        raise Exception("Implement me")
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.positional_encodings = PositionalEncoding(d_model, num_positions)
+        self.layers = nn.ModuleList()
+        for i in range(num_layers):
+            self.layers.append(TransformerLayer(d_model, d_internal))
+        self.classifier = nn.Linear(d_model, num_classes)
 
     def forward(self, indices):
         """
@@ -48,7 +53,17 @@ class Transformer(nn.Module):
         :return: A tuple of the softmax log probabilities (should be a 20x3 matrix) and a list of the attention
         maps you use in your layers (can be variable length, but each should be a 20x20 matrix)
         """
-        raise Exception("Implement me")
+        x = self.embedding(indices)
+        x = self.positional_encodings(x)
+
+        attention_maps = []
+        for layer in self.layers: 
+            x, attention_map = layer(x)
+            attention_maps.append(attention_map)
+
+        log_probs = torch.log_softmax(self.classifier(x), dim = -1)
+
+        return log_probs, attention_maps
 
 
 # Your implementation of the Transformer layer goes here. It should take vectors and return the same number of vectors
@@ -74,7 +89,18 @@ class TransformerLayer(nn.Module):
         )
 
     def forward(self, input_vecs):
-        raise Exception("Implement me")
+        queries = self.query(input_vecs)
+        keys = self.key(input_vecs)
+        values = self.value(input_vecs)
+
+        scores = torch.matmul(queries, keys.transpose(-2, -1)) / np.sqrt(self.d_model)
+        attention_weights = torch.softmax(scores, dim=-1)
+        attention_output = torch.matmul(attention_weights, values)
+        
+        attention_output = self.output_layer(attention_output) + input_vecs
+        output = self.feed_foward(attention_output) + attention_output
+        
+        return output, attention_weights
 
 
 # Implementation of positional encoding that you can use in your network
@@ -102,8 +128,6 @@ class PositionalEncoding(nn.Module):
         input_size = x.shape[-2]
         indices_to_embed = torch.tensor(np.asarray(range(0, input_size))).type(torch.LongTensor)
         if self.batched:
-            # Use unsqueeze to form a [1, seq len, embedding dim] tensor -- broadcasting will ensure that this
-            # gets added correctly across the batch
             emb_unsq = self.emb(indices_to_embed).unsqueeze(0)
             return x + emb_unsq
         else:
@@ -112,16 +136,24 @@ class PositionalEncoding(nn.Module):
 
 # This is a skeleton for train_classifier: you can implement this however you want
 def train_classifier(args, train, dev):
-    raise Exception("Not fully implemented yet")
 
     # The following code DOES NOT WORK but can be a starting point for your implementation
     # Some suggested snippets to use:
-    model = Transformer(...)
+
+    vocab_size = 1000
+    num_positions = 20
+    d_model = 128 
+    d_internal = 256
+    num_classes = 3 
+    num_layers = 2 
+    num_epochs = 5 
+
+
+    model = Transformer(vocab_size, num_positions, d_model, d_internal, num_classes, num_layers)
     model.zero_grad()
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    num_epochs = 10
     for t in range(0, num_epochs):
         loss_this_epoch = 0.0
         random.seed(t)
@@ -130,10 +162,14 @@ def train_classifier(args, train, dev):
         random.shuffle(ex_idxs)
         loss_fcn = nn.NLLLoss()
         for ex_idx in ex_idxs:
-            loss = loss_fcn(...) # TODO: Run forward and compute loss
-            # model.zero_grad()
-            # loss.backward()
-            # optimizer.step()
+            example = train[ex_idx]
+            input_tensor = example.input_tensor
+            target_tensor = example.output_tensor
+            log_probs, _ = model(input_tensor)
+            loss = loss_fcn(log_probs.view(-1, num_classes), target_tensor.view(-1)) # TODO: Run forward and compute loss
+            model.zero_grad()
+            loss.backward()
+            optimizer.step()
             loss_this_epoch += loss.item()
     model.eval()
     return model
