@@ -75,7 +75,6 @@ class NeuralLanguageModel(LanguageModel):
 
     def get_log_prob_sequence(self, next_chars, context):
         self.transformer.eval()
-        full_sequence = context + next_chars
         indexed_context = []
         for c in context:
             indexed_context.append(self.vocab_index.index_of(c))
@@ -106,7 +105,7 @@ def train_lm(args, train_text, dev_text, vocab_index):
     num_layers = 2
     lr = 1e-4
     num_epochs = 10
-    num_classes = 3
+    num_classes = 27
 
     model = NeuralLanguageModel(vocab_size, d_model, num_positions, d_internal, num_classes, num_layers)
     optimizer = optim.Adam(model.transformer.parameters(), lr=lr)
@@ -119,7 +118,7 @@ def train_lm(args, train_text, dev_text, vocab_index):
     
     dev_sequences = []
     for i in range(len(dev_text) - num_positions):
-        sequence = dev_text[i+i + num_positions + 1]
+        sequence = dev_text[i:i + num_positions + 1]
         dev_sequences.append(sequence)
 
     for epoch in range(num_epochs):
@@ -142,8 +141,10 @@ def train_lm(args, train_text, dev_text, vocab_index):
 
             log_probs, _ = model.transformer(input_seq)
             
-
+            print(f"log_probs.shape before reshaping: {log_probs.shape}")
             log_probs = log_probs.view(-1, vocab_size) 
+
+
             target_seq = target_seq.view(-1)  
 
             loss = loss_fcn(log_probs, target_seq)
