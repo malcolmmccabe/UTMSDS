@@ -62,7 +62,16 @@ class TransformerLayer(nn.Module):
         should both be of this length.
         """
         super().__init__()
-        raise Exception("Implement me")
+        self.d_model = d_model
+        self.query = nn.Linear(d_model, d_internal)
+        self.key = nn.Linear(d_model, d_internal)
+        self.value = nn.Linear(d_model, d_internal)
+        self.output_layer = nn.Linear(d_internal, d_model)
+        self.feed_foward = nn.Sequential(
+            nn.Linear(d_model, d_internal),
+            nn.ReLU(),
+            nn.Linear(d_internal, d_model)
+        )
 
     def forward(self, input_vecs):
         raise Exception("Implement me")
