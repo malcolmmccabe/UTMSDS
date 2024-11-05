@@ -5,16 +5,14 @@ from typing import List
 import numpy as np
 import spacy
 import gc
+import string
+
 
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 import nltk
 nltk.download('wordnet')
-
-
 
 class FactExample:
     """
@@ -91,43 +89,65 @@ class AlwaysEntailedFactChecker(object):
 
 class WordRecallThresholdFactChecker(object):
 
-    def __init__(self, threshold_s =0.12, threshold_ns = 0.19):
+    def __init__(self, threshold_s =0.12, threshold_ns = 0.09, jaccard_weight = 0.64):
+        # Set self variables
         self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english')).difference({'no', 'not', 'against'})
+        self.stop_words = set(stopwords.words('english'))
         self.threshold_s = threshold_s
         self.threshold_ns = threshold_ns
-        self.vectorizer = TfidfVectorizer()
+        self.jaccard_weight = jaccard_weight
 
     def preprocess(self, text):
-        tokens = text.lower().split()
+        text = text.translate(str.maketrans('', '', string.punctuation)).lower()
+        tokens = text.split()
+        # Lemmatize
         tokens = [self.lemmatizer.lemmatize(token) for token in tokens if token not in self.stop_words]
         return ' '.join(tokens)
 
-    def tfidf_similarity(self, fact, passage):
-        texts = [fact, passage]
-        tfidf_matrix = self.vectorizer.fit_transform(texts)
-        similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
-        return similarity
+    
+    def jaccard_similarity(self, fact, passage):
+        # Calculate Jaccard Similarity
+        fact_set = set(fact.split())
+        passage_set = set(passage.split())
+        intersection = fact_set.intersection(passage_set)
+        union = fact_set.union(passage_set)
+        if union:
+            return len(intersection) / len(union)
+        
+    def token_overlap_similarity(self, fact, passage):
+        
+        fact_set = set(fact.split())
+        passage_set = set(passage.split())
+        intersection = fact_set.intersection(passage_set)
+        if fact_set:
+            return len(intersection) / len(fact_set)
+        else:
+            return 0
     
     def predict(self, fact: str, passages: list) -> str:
         fact = self.preprocess(fact)
-        max_similarity = 0
+        max_combined_similarity = 0
         
         for passage in passages:
             passage_text = self.preprocess(passage['text'])
-            similarity = self.tfidf_similarity(fact, passage_text)
-            max_similarity = max(max_similarity, similarity)
+            
+            # Use both jaccard and overlap
+            jaccard_sim = self.jaccard_similarity(fact, passage_text)
+            token_overlap_sim = self.token_overlap_similarity(fact, passage_text)
+            
+            # Combine both methods
+            combined_similarity = (self.jaccard_weight * jaccard_sim) + ((1 - self.jaccard_weight) * token_overlap_sim)
+            combined_similarity /= (1 + len(passage_text.split()) / 100)
+            
+            max_combined_similarity = max(max_combined_similarity, combined_similarity)
         
-        if max_similarity >= self.threshold_s:
+        # Threshold define
+        if max_combined_similarity >= self.threshold_s:
             return "S"
-        elif max_similarity < self.threshold_ns:
+        elif max_combined_similarity < self.threshold_ns:
             return "NS"
         
         return "NS"
-
-
-
-
 
 class EntailmentFactChecker(object):
     def __init__(self, ent_model):
