@@ -6,6 +6,15 @@ import numpy as np
 import spacy
 import gc
 
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+import nltk
+nltk.download('wordnet')
+
+
 
 class FactExample:
     """
@@ -39,10 +48,12 @@ class EntailmentModel:
             outputs = self.model(**inputs)
             logits = outputs.logits
 
+            entailment_score = torch.softmax(logits, dim=1)[0][0].item()
+
         # Note that the labels are ["entailment", "neutral", "contradiction"]. There are a number of ways to map
         # these logits or probabilities to classification decisions; you'll have to decide how you want to do this.
 
-        raise Exception("Not implemented")
+        return entailment_score
 
         # To prevent out-of-memory (OOM) issues during autograding, we explicitly delete
         # objects inputs, outputs, logits, and any results that are no longer needed after the computation.
@@ -79,8 +90,43 @@ class AlwaysEntailedFactChecker(object):
 
 
 class WordRecallThresholdFactChecker(object):
-    def predict(self, fact: str, passages: List[dict]) -> str:
-        raise Exception("Implement me")
+
+    def __init__(self, threshold_s =0.12, threshold_ns = 0.19):
+        self.lemmatizer = WordNetLemmatizer()
+        self.stop_words = set(stopwords.words('english')).difference({'no', 'not', 'against'})
+        self.threshold_s = threshold_s
+        self.threshold_ns = threshold_ns
+        self.vectorizer = TfidfVectorizer()
+
+    def preprocess(self, text):
+        tokens = text.lower().split()
+        tokens = [self.lemmatizer.lemmatize(token) for token in tokens if token not in self.stop_words]
+        return ' '.join(tokens)
+
+    def tfidf_similarity(self, fact, passage):
+        texts = [fact, passage]
+        tfidf_matrix = self.vectorizer.fit_transform(texts)
+        similarity = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+        return similarity
+    
+    def predict(self, fact: str, passages: list) -> str:
+        fact = self.preprocess(fact)
+        max_similarity = 0
+        
+        for passage in passages:
+            passage_text = self.preprocess(passage['text'])
+            similarity = self.tfidf_similarity(fact, passage_text)
+            max_similarity = max(max_similarity, similarity)
+        
+        if max_similarity >= self.threshold_s:
+            return "S"
+        elif max_similarity < self.threshold_ns:
+            return "NS"
+        
+        return "NS"
+
+
+
 
 
 class EntailmentFactChecker(object):
@@ -88,7 +134,20 @@ class EntailmentFactChecker(object):
         self.ent_model = ent_model
 
     def predict(self, fact: str, passages: List[dict]) -> str:
-        raise Exception("Implement me")
+        for passage in passages:
+            sentences = passage['text'].split(".")
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                
+                entailment_score = self.ent_model.check_entailment(sentence, fact)
+
+                # If meets treshold, S
+                if entailment_score >= 0.5:
+                    return "S"
+        # If under threshold, NS
+        return "NS"
 
 
 # OPTIONAL

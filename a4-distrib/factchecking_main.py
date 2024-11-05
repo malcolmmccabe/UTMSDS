@@ -75,6 +75,8 @@ def predict_two_classes(examples: List[FactExample], fact_checker):
     gold_label_indexer = ["S", "NS"]
     confusion_mat = [[0, 0], [0, 0]]
     ex_count = 0
+    false_positives = []
+    false_negatives = []
 
     for i, example in enumerate(tqdm(examples)):
         converted_label = "NS" if example.label == 'IR' else example.label
@@ -84,9 +86,26 @@ def predict_two_classes(examples: List[FactExample], fact_checker):
         pred_label = gold_label_indexer.index(raw_pred)
 
         confusion_mat[gold_label][pred_label] += 1
+
+
+        if pred_label != gold_label:
+            if pred_label == 0:  # Predicted "S" but ground truth is "NS" -> False Positive
+                false_positives.append({
+                    "fact": example.fact,
+                    "predicted": "S",
+                    "ground_truth": "NS",
+                    "passages": [p["text"] for p in example.passages]
+                })
+            else:  # Predicted "NS" but ground truth is "S" -> False Negative
+                false_negatives.append({
+                    "fact": example.fact,
+                    "predicted": "NS",
+                    "ground_truth": "S",
+                    "passages": [p["text"] for p in example.passages]
+                })
+
         ex_count += 1
     print_eval_stats(confusion_mat, gold_label_indexer)
-
 
 def print_eval_stats(confusion_mat, gold_label_indexer):
     """
